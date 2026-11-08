@@ -2,7 +2,7 @@
 
 A production n8n system for a small booking agency that organises European tours for rock bands. It turns screenshots of tour banners into a deduplicated list of new concert venues, finds booking contacts for each one and writes them into the agency's database. The client runs the whole thing from a Telegram bot.
 
-**Result:** before the automation, the agency researched at most **~50 new venues a day** by hand. In the first three days after launch the pipeline added **1,500+ new venues** to their database. On the banners checked by hand, the vision model misread only one line, where another graphic element overlapped the text.
+**Result:** by hand, the agency added at most **~50 new venues a day** to its database. In its first few days, the pipeline processed **114 tour banners** and added **907 new venues**. Across those banners, the vision model misread only one line, where another graphic element overlapped the text.
 
 All LLM inference runs locally (Ollama on an RTX 4090), so client data never goes to an LLM provider and there are no per-token costs.
 
