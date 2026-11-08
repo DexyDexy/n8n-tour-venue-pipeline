@@ -1,0 +1,1029 @@
+{
+  "name": "TourVenues_09_worker_gateway",
+  "nodes": [
+    {
+      "id": "1587689d-fb24-4eee-b2e8-6802057b6d44",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.2,
+      "position": [
+        100,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "tourvenues-gateway",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_ME",
+          "name": "httpHeaderAuth credential"
+        }
+      }
+    },
+    {
+      "id": "af9d230b-a0e8-46b5-9631-1bb945d1db1f",
+      "name": "Read Lock",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        300,
+        300
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "<DATA_TABLE_ID>",
+          "cachedResultName": "tourvenues_bot_lock"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "lockKey",
+              "condition": "eq",
+              "keyValue": "lock"
+            }
+          ]
+        },
+        "returnAll": true
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "7f60ca25-7838-4e9f-a958-c0d86dffc9af",
+      "name": "Decide",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        500,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const body = $('Webhook').first().json.body || {};\nconst L = $('Read Lock').all().map(i => i.json).find(r => r.lockKey === 'lock') || {};\nconst TTL = 12 * 3600 * 1000; // блокировка старше 12 часов — зависшая, не мешает\nconst started = L.startedAt ? Date.parse(L.startedAt) : 0;\nconst busy = !!L.job && Date.now() - started < TTL;\nconst lock = L.job ? { job: L.job, jobName: L.jobName, by: L.byName, since: L.startedAt, stale: !busy } : null;\nconst W = {\n  '11': { id: 'NmBannerExtr0001', name: 'TourVenues_11: баннеры → 02' },\n  '12': { id: 'NmNewVenueFlt001', name: 'TourVenues_12: сверка с базой → 03' },\n  '10': { id: 'P6dj7b5aOgyPXowF', name: 'TourVenues_10: поиск контактов → база' }\n};\nconst JOBS = { '11': ['11'], '12': ['12'], '10': ['10'], all: ['11', '12', '10'] };\nconst NAMES = { '11': 'Баннеры', '12': 'Сверка с базой', '10': 'Поиск контактов', all: 'Весь конвейер (баннеры → сверка → контакты)' };\nconst action = String(body.action || '');\nconst respond = response => [{ json: { route: 'respond', response } }];\nif (action === 'ping') return respond({ ok: true, busy, lock });\nif (action === 'status') return [{ json: { route: 'status', busy, lock } }];\nif (action === 'unlock') return [{ json: { route: 'unlock', response: { ok: true, unlocked: !!L.job, lock } } }];\nif (action !== 'run') return respond({ ok: false, error: 'unknown action: ' + action });\nconst job = String(body.job || '');\nif (!JOBS[job]) return respond({ ok: false, error: 'unknown job: ' + job });\nif (busy) return respond({ ok: true, started: false, busy: true, lock });\nconst params = { dryRun: body.dryRun === true, chatId: String(body.chatId || ''), requestedBy: String(body.requestedBy || '') };\nreturn [{ json: {\n  route: 'run', job, jobName: NAMES[job], startedAt: new Date().toISOString(), ...params,\n  steps: JOBS[job].map(k => ({ workflowId: W[k].id, stepName: W[k].name, ...params })),\n  response: { ok: true, started: true, job, jobName: NAMES[job], dryRun: params.dryRun }\n} }];"
+      }
+    },
+    {
+      "id": "4e0c504c-836c-4137-974c-9494f4785860",
+      "name": "Route",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        700,
+        300
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "outputKey": "respond",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "respond",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "outputKey": "status",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "status",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "outputKey": "run",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "run",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "outputKey": "unlock",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "unlock",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "4d28508b-8e86-4b10-bcda-5cedbb9cfd67",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        900,
+        300
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json.response) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "029f119b-6cee-4bb2-b117-f9a3a241ab60",
+      "name": "Ollama Ping",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        900,
+        450
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "http://localhost:11434/api/version",
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "0c59808e-b63c-4828-bd70-a5a114a628ee",
+      "name": "List Banners",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        1100,
+        450
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "fileFolder",
+        "searchMethod": "query",
+        "queryString": "'<DRIVE_FOLDER_INBOX_ID>' in parents and mimeType contains 'image/' and trashed = false",
+        "returnAll": true,
+        "filter": {},
+        "options": {
+          "fields": [
+            "id",
+            "name"
+          ]
+        }
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "googleApi credential"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "43a41afe-9df4-4597-a3f3-e5e9c916a6ba",
+      "name": "Read 02",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1300,
+        450
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "<SHEET_EXTRACTED_ID>"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gid=0",
+          "cachedResultName": "Sheet1"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "googleApi credential"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "e2302067-a6c1-477f-b498-3b392710c036",
+      "name": "Read 03",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1500,
+        450
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "<SHEET_NEW_VENUES_ID>"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gid=0",
+          "cachedResultName": "Sheet1"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "googleApi credential"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "7ae84ed4-678b-430f-b31d-8939f755c557",
+      "name": "Build Status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1700,
+        450
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Те же правила, что в TourVenues_12 (итоговые пометки в 02) и TourVenues_10 (отметка processed в 03)\nconst d = $('Decide').first().json;\nconst S = v => String(v == null ? '' : v).trim();\nconst rows = name => $(name).all().map(i => i.json).filter(r => r.row_number && S(r.NAME));\nconst failed = name => $(name).all().some(i => i.json.error);\nconst FINAL = /^(added to 03_OUT_newData|skipped as )/i;\nconst r02 = rows('Read 02');\nconst r03 = rows('Read 03');\nconst banners = $('List Banners').all().filter(i => i.json.id).length;\nreturn [{ json: { response: {\n  ok: true, busy: d.busy, lock: d.lock,\n  banners: failed('List Banners') ? null : banners,\n  new02: failed('Read 02') ? null : r02.filter(r => !S(r['Automation Notes'])).length,\n  review02: failed('Read 02') ? null : r02.filter(r => S(r['Automation Notes']) && !FINAL.test(S(r['Automation Notes']))).length,\n  todo03: failed('Read 03') ? null : r03.filter(r => !/^processed\\b/i.test(S(r['Automation Status']))).length,\n  ollama: !!$('Ollama Ping').first().json.version\n} } }];"
+      }
+    },
+    {
+      "id": "777dcedd-3342-499e-90c3-a0a2e03c0eb4",
+      "name": "Respond Status",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1900,
+        450
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json.response) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "989a57d3-43c4-408d-ae23-b465b737f459",
+      "name": "Write Lock",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        900,
+        600
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "upsert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "<DATA_TABLE_ID>",
+          "cachedResultName": "tourvenues_bot_lock"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "lockKey",
+              "condition": "eq",
+              "keyValue": "lock"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "lockKey": "lock",
+            "job": "={{ $('Decide').first().json.job }}",
+            "jobName": "={{ $('Decide').first().json.jobName }}",
+            "byName": "={{ $('Decide').first().json.requestedBy }}",
+            "chatId": "={{ $('Decide').first().json.chatId }}",
+            "startedAt": "={{ $('Decide').first().json.startedAt }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "lockKey",
+              "displayName": "lockKey",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job",
+              "displayName": "job",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "jobName",
+              "displayName": "jobName",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "byName",
+              "displayName": "byName",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "chatId",
+              "displayName": "chatId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "startedAt",
+              "displayName": "startedAt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "e2cb9d78-419e-455d-9e18-7ae377bcc163",
+      "name": "Respond Started",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1100,
+        600
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($('Decide').first().json.response) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "7b7d5937-2e42-45e0-acbb-694304848d4b",
+      "name": "Steps",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1300,
+        600
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "return $('Decide').first().json.steps.map(s => ({ json: s }));"
+      }
+    },
+    {
+      "id": "84ae7b9b-9875-47e9-a208-c090a437c190",
+      "name": "Clear Lock",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1700,
+        600
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "upsert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "<DATA_TABLE_ID>",
+          "cachedResultName": "tourvenues_bot_lock"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "lockKey",
+              "condition": "eq",
+              "keyValue": "lock"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "lockKey": "lock",
+            "job": "",
+            "jobName": "",
+            "byName": "",
+            "chatId": "",
+            "startedAt": ""
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "lockKey",
+              "displayName": "lockKey",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job",
+              "displayName": "job",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "jobName",
+              "displayName": "jobName",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "byName",
+              "displayName": "byName",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "chatId",
+              "displayName": "chatId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "startedAt",
+              "displayName": "startedAt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "executeOnce": true
+    },
+    {
+      "id": "3ebe25e8-ae1a-4f45-8f2a-16d66efb9200",
+      "name": "Run Step",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.4,
+      "position": [
+        1700,
+        750
+      ],
+      "parameters": {
+        "mode": "once",
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.workflowId }}"
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "f25e1411-43db-4424-b774-de43559ba195",
+      "name": "Step Done",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1900,
+        750
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "return [{ json: $('Loop Steps').first().json }];"
+      }
+    },
+    {
+      "id": "e65ee22d-7a13-483a-a29f-6c008de87a3f",
+      "name": "Loop Steps",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1500,
+        600
+      ],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "6eb30eb9-4d52-4917-92d1-47303e2b66cd",
+      "name": "Unlock",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        900,
+        750
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "upsert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "<DATA_TABLE_ID>",
+          "cachedResultName": "tourvenues_bot_lock"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "lockKey",
+              "condition": "eq",
+              "keyValue": "lock"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "lockKey": "lock",
+            "job": "",
+            "jobName": "",
+            "byName": "",
+            "chatId": "",
+            "startedAt": ""
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "lockKey",
+              "displayName": "lockKey",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job",
+              "displayName": "job",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "jobName",
+              "displayName": "jobName",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "byName",
+              "displayName": "byName",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "chatId",
+              "displayName": "chatId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "startedAt",
+              "displayName": "startedAt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "executeOnce": true
+    },
+    {
+      "id": "ba21ac92-0a88-4721-a949-78170332f653",
+      "name": "Respond Unlock",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1100,
+        750
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($('Decide').first().json.response) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "8775d34c-0bdd-40a2-9481-e9b2c2304362",
+      "name": "Step Failed",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1900,
+        900
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const step = $('Loop Steps').first().json;\nconst err = $input.first().json.error;\nconst msg = String((err && (err.message || err.description)) || err || 'неизвестная ошибка').slice(0, 500);\nconst esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst text = '❌ <b>Ошибка: ' + esc(step.stepName) + '</b>' + (step.dryRun ? ' (тестовый режим)' : '') +\n  '\\n' + esc(msg) + '\\nСледующие шаги не запускались. Подробности — в журнале запусков n8n на ПК.';\nconst ids = [...new Set([step.chatId, '<OWNER_TELEGRAM_CHAT_ID>'].filter(Boolean))];\nreturn ids.map(chatId => ({ json: { chatId, text: (chatId !== step.chatId && step.requestedBy ? '👤 Запустил: ' + esc(step.requestedBy) + '\\n' : '') + text } }));"
+      }
+    },
+    {
+      "id": "90e8903d-3409-4baf-a496-bad48e6685e3",
+      "name": "Send Error",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2100,
+        900
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_ME",
+          "name": "telegramApi credential"
+        }
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Read Lock",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Lock": {
+      "main": [
+        [
+          {
+            "node": "Decide",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decide": {
+      "main": [
+        [
+          {
+            "node": "Route",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ollama Ping",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Write Lock",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Unlock",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Ping": {
+      "main": [
+        [
+          {
+            "node": "List Banners",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Banners": {
+      "main": [
+        [
+          {
+            "node": "Read 02",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read 02": {
+      "main": [
+        [
+          {
+            "node": "Read 03",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read 03": {
+      "main": [
+        [
+          {
+            "node": "Build Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Status": {
+      "main": [
+        [
+          {
+            "node": "Respond Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Lock": {
+      "main": [
+        [
+          {
+            "node": "Respond Started",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond Started": {
+      "main": [
+        [
+          {
+            "node": "Steps",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Steps": {
+      "main": [
+        [
+          {
+            "node": "Loop Steps",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Step": {
+      "main": [
+        [
+          {
+            "node": "Step Done",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Step Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step Done": {
+      "main": [
+        [
+          {
+            "node": "Loop Steps",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Steps": {
+      "main": [
+        [
+          {
+            "node": "Clear Lock",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Run Step",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Unlock": {
+      "main": [
+        [
+          {
+            "node": "Respond Unlock",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step Failed": {
+      "main": [
+        [
+          {
+            "node": "Send Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Error": {
+      "main": [
+        [
+          {
+            "node": "Clear Lock",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

@@ -1,0 +1,987 @@
+{
+  "name": "TourVenues_08_bot_controller",
+  "nodes": [
+    {
+      "id": "956de096-7d14-415e-b0c7-97f29bbd1f60",
+      "name": "Telegram",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.5,
+      "position": [
+        100,
+        300
+      ],
+      "parameters": {
+        "updates": [
+          "message",
+          "callback_query"
+        ],
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_ME",
+          "name": "telegramApi credential"
+        }
+      }
+    },
+    {
+      "id": "9b07b4ba-5208-4125-a46b-50fe58470eed",
+      "name": "Find User",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        300,
+        300
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "<DATA_TABLE_ID>",
+          "cachedResultName": "tourvenues_bot_users"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "tg_id",
+              "condition": "eq",
+              "keyValue": "={{ String((($json.callback_query || $json.message || {}).from || {}).id || '-') }}"
+            }
+          ]
+        },
+        "returnAll": true
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "45f16185-71aa-4de8-a820-135c59cb12f6",
+      "name": "Decide",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        500,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const OWNER = '<OWNER_TELEGRAM_CHAT_ID>';\nconst esc = t => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst JOBS = {\n  '11': { title: '🖼 Баннеры', about: 'Читает новые баннеры из папки 01_OUT_Banners и дописывает концерты в 02_OUT_extractedData. Обработанные файлы переносятся в 02_OUT_ProcessedBanners.' },\n  '12': { title: '🔎 Сверка с базой', about: 'Сверяет новые строки 02_OUT_extractedData с MASTER BASE. Новые площадки уходят в 03_OUT_newData, сомнительные остаются в 02 с пометкой для человека.' },\n  '10': { title: '📇 Поиск контактов', about: 'Ищет e-mail, сайт и соцсети для всех новых строк 03_OUT_newData и дописывает их в MASTER BASE. Тратит кредиты Tavily; кончатся — прогон остановится сам, следующий продолжит с той же строки. Около минуты на строку.' },\n  all: { title: '▶️ Всё по порядку', about: 'Баннеры → сверка с базой → поиск контактов, шаг за шагом. Отчёт приходит после каждого шага.' }\n};\n\nconst u = $('Telegram').first().json;\nconst cb = u.callback_query;\nconst msg = cb ? cb.message : u.message;\nif (!msg || !msg.chat) return [];\nconst from = (cb || u.message).from || {};\nconst chatId = String(msg.chat.id);\nconst userId = String(from.id);\nconst tgName = [from.first_name, from.last_name].filter(Boolean).join(' ') || from.username || userId;\nconst row = $('Find User').all().map(i => i.json).find(r => String(r.tg_id) === userId);\nconst role = row ? String(row.role || '') : '';\nconst name = row && row.name ? String(row.name) : tgName;\nconst out = [];\nconst add = (route, extra) => out.push({ json: Object.assign({ route, chatId }, extra) });\nconst text = t => add('text', { text: t });\nconst menu = () => add('menu', { text: '<b>Tour Venues — пульт управления</b>\\nВыберите действие. Отчёт о каждом прогоне придёт сюда.' +\n  (role === 'owner' ? '\\n\\nКоманды: /status — состояние, /unlock — снять зависшую блокировку, /id — ваш ID.' : '') });\nconst gateway = (payload, extra) => add('gateway', Object.assign({ payload, role, name }, extra));\n\n// Незнакомец: сообщаем ID, по /start — запрос владельцу\nif (!role) {\n  if (cb) { add('answer', { callbackId: cb.id, text: 'Нет доступа' }); return out; }\n  const isStart = /^\\/start\\b/.test(String(msg.text || ''));\n  text('Здравствуйте! Это бот Tour Venues.\\nДоступа у вас пока нет. Ваш Telegram ID: <code>' + userId + '</code>' +\n    (isStart ? '\\nЗапрос отправлен владельцу — когда доступ откроют, придёт сообщение.' : '\\nЧтобы запросить доступ, отправьте /start'));\n  if (isStart) add('grant_ask', { chatId: OWNER, newId: userId,\n    text: '🔔 Запрос доступа к боту: <b>' + esc(tgName) + '</b>' + (from.username ? ' (@' + esc(from.username) + ')' : '') + ', ID <code>' + userId + '</code>' });\n  return out;\n}\n\n// Нажатие кнопки\nif (cb) {\n  const [kind, arg] = String(cb.data || '').split(':');\n  const ageMin = (Date.now() / 1000 - (msg.date || 0)) / 60;\n  const ack = t => add('answer', { callbackId: cb.id, text: t || '' });\n  const close = t => add('close', { messageId: msg.message_id, text: t });\n  if ((kind === 'run' || kind === 'dry') && ageMin > 30) {\n    ack('Кнопка устарела');\n    close('⌛ Кнопка устарела — откройте меню заново.');\n    menu();\n    return out;\n  }\n  if (kind === 'job' && JOBS[arg]) {\n    ack();\n    add(role === 'owner' ? 'confirm_owner' : 'confirm_client', { job: arg, text: '<b>' + JOBS[arg].title + '</b>\\n' + JOBS[arg].about + '\\n\\nЗапустить?' });\n    return out;\n  }\n  if ((kind === 'run' || kind === 'dry') && JOBS[arg]) {\n    if (kind === 'dry' && role !== 'owner') { ack('Нет доступа'); return out; }\n    ack('Отправляю на рабочий ПК…');\n    close('⏳ <b>' + JOBS[arg].title + '</b>' + (kind === 'dry' ? ' (тестовый режим)' : '') + ': отправлено на рабочий ПК…');\n    gateway({ action: 'run', job: arg, dryRun: kind === 'dry', chatId, requestedBy: name }, { jobTitle: JOBS[arg].title });\n    return out;\n  }\n  if (kind === 'st') { ack('Спрашиваю ПК…'); gateway({ action: 'status' }); return out; }\n  if (kind === 'cancel') { ack(); close('Отменено.'); return out; }\n  if (kind === 'menu') { ack(); menu(); return out; }\n  if ((kind === 'grant' || kind === 'deny') && role === 'owner' && /^\\d+$/.test(arg || '')) {\n    // имя нового человека — из текста запроса («… к боту: Имя (@ник), ID 123»)\n    const m = String(msg.text || '').match(/к боту: (.*?)(?: \\(@[^)]*\\))?, ID \\d+/);\n    const newName = m ? m[1] : arg;\n    ack();\n    if (kind === 'grant') {\n      close('✅ Доступ выдан: <b>' + esc(newName) + '</b> (ID <code>' + arg + '</code>, роль client).\\nУбрать доступ — удалить строку в таблице tourvenues_bot_users на VPS.');\n      add('grant', { newId: arg, newName });\n    } else close('✖️ Запрос отклонён: ' + esc(newName) + ' (ID <code>' + arg + '</code>).');\n    return out;\n  }\n  ack('Неизвестная кнопка');\n  return out;\n}\n\n// Текстовое сообщение (кнопки под полем ввода присылают свой текст: «📋 Меню», «📊 Состояние»)\nconst t = String(msg.text || '').trim();\nif (/^\\/status\\b/.test(t) || t === '📊 Состояние') gateway({ action: 'status' });\nelse if (/^\\/unlock\\b/.test(t) && role === 'owner') gateway({ action: 'unlock' });\nelse if (/^\\/id\\b/.test(t)) text('Ваш Telegram ID: <code>' + userId + '</code>');\nelse {\n  if (/^\\/start\\b/.test(t)) add('keyboard', { text: 'Кнопки «📋 Меню» и «📊 Состояние» — внизу экрана, под полем ввода.' });\n  menu();\n}\nreturn out;"
+      }
+    },
+    {
+      "id": "51786253-09fd-4836-ac11-ab9ad649d810",
+      "name": "Route",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        700,
+        300
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "outputKey": "text",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "text",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "outputKey": "menu",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "menu",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "outputKey": "confirm_owner",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "confirm_owner",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "outputKey": "confirm_client",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "confirm_client",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "outputKey": "grant_ask",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "grant_ask",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "outputKey": "answer",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "answer",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "outputKey": "close",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "close",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "outputKey": "gateway",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "gateway",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "outputKey": "grant",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "grant",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "outputKey": "keyboard",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "keyboard",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "03294b0d-0f1f-4d0c-bb8b-0c2e3ac9dada",
+      "name": "Send Text",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        900,
+        300
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_ME",
+          "name": "telegramApi credential"
+        }
+      }
+    },
+    {
+      "id": "73884a7a-ff29-4bcb-afec-15a0e0fa8ed9",
+      "name": "Send Menu",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        900,
+        450
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.text }}",
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "🖼 Баннеры",
+                    "additionalFields": {
+                      "callback_data": "job:11"
+                    }
+                  },
+                  {
+                    "text": "🔎 Сверка с базой",
+                    "additionalFields": {
+                      "callback_data": "job:12"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "📇 Поиск контактов",
+                    "additionalFields": {
+                      "callback_data": "job:10"
+                    }
+                  },
+                  {
+                    "text": "▶️ Всё по порядку",
+                    "additionalFields": {
+                      "callback_data": "job:all"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "📊 Состояние",
+                    "additionalFields": {
+                      "callback_data": "st"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_ME",
+          "name": "telegramApi credential"
+        }
+      }
+    },
+    {
+      "id": "6a4d76fc-a57d-4206-9bee-890b425c329c",
+      "name": "Send Confirm (owner)",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        900,
+        600
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.text }}",
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "✅ Запустить",
+                    "additionalFields": {
+                      "callback_data": "={{ 'run:' + $json.job }}"
+                    }
+                  },
+                  {
+                    "text": "🧪 Тест без записи",
+                    "additionalFields": {
+                      "callback_data": "={{ 'dry:' + $json.job }}"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "✖️ Отмена",
+                    "additionalFields": {
+                      "callback_data": "cancel"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_ME",
+          "name": "telegramApi credential"
+        }
+      }
+    },
+    {
+      "id": "fb2d3944-560c-40ea-bc40-5bed9beabe55",
+      "name": "Send Confirm (client)",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        900,
+        750
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.text }}",
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "✅ Запустить",
+                    "additionalFields": {
+                      "callback_data": "={{ 'run:' + $json.job }}"
+                    }
+                  },
+                  {
+                    "text": "✖️ Отмена",
+                    "additionalFields": {
+                      "callback_data": "cancel"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_ME",
+          "name": "telegramApi credential"
+        }
+      }
+    },
+    {
+      "id": "f85b3b13-a7d4-4ad0-b212-2495ef9e2094",
+      "name": "Send Grant Ask",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        900,
+        900
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.text }}",
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "✅ Дать доступ",
+                    "additionalFields": {
+                      "callback_data": "={{ 'grant:' + $json.newId }}"
+                    }
+                  },
+                  {
+                    "text": "✖️ Отклонить",
+                    "additionalFields": {
+                      "callback_data": "={{ 'deny:' + $json.newId }}"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_ME",
+          "name": "telegramApi credential"
+        }
+      }
+    },
+    {
+      "id": "94d854e0-f57a-4570-a730-928e9f3705d9",
+      "name": "Answer Callback",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        900,
+        1050
+      ],
+      "parameters": {
+        "resource": "callback",
+        "operation": "answerQuery",
+        "queryId": "={{ $json.callbackId }}",
+        "additionalFields": {
+          "text": "={{ $json.text }}"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_ME",
+          "name": "telegramApi credential"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "158a06eb-b711-4c83-9819-bd1414f9cf0f",
+      "name": "Close Message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        900,
+        1200
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "editMessageText",
+        "messageType": "message",
+        "chatId": "={{ $json.chatId }}",
+        "messageId": "={{ $json.messageId }}",
+        "text": "={{ $json.text }}",
+        "replyMarkup": "none",
+        "additionalFields": {
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_ME",
+          "name": "telegramApi credential"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "4f7ff2d4-d3fe-4d61-ae9e-08d3ef08edee",
+      "name": "Call PC",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        900,
+        1350
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://<WORKER_HOST>:5678/webhook/tourvenues-gateway",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {
+          "timeout": "={{ $json.payload.action === 'status' ? 60000 : 10000 }}"
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_ME",
+          "name": "httpHeaderAuth credential"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "4f421079-b437-41fe-9474-1d604af1d90a",
+      "name": "After PC",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        1350
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const OWNER = '<OWNER_TELEGRAM_CHAT_ID>';\nconst esc = t => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst JOBS = {\n  '11': { title: '🖼 Баннеры', about: 'Читает новые баннеры из папки 01_OUT_Banners и дописывает концерты в 02_OUT_extractedData. Обработанные файлы переносятся в 02_OUT_ProcessedBanners.' },\n  '12': { title: '🔎 Сверка с базой', about: 'Сверяет новые строки 02_OUT_extractedData с MASTER BASE. Новые площадки уходят в 03_OUT_newData, сомнительные остаются в 02 с пометкой для человека.' },\n  '10': { title: '📇 Поиск контактов', about: 'Ищет e-mail, сайт и соцсети для всех новых строк 03_OUT_newData и дописывает их в MASTER BASE. Тратит кредиты Tavily; кончатся — прогон остановится сам, следующий продолжит с той же строки. Около минуты на строку.' },\n  all: { title: '▶️ Всё по порядку', about: 'Баннеры → сверка с базой → поиск контактов, шаг за шагом. Отчёт приходит после каждого шага.' }\n};\n\nconst ctx = $('Decide').all().map(i => i.json).find(x => x.route === 'gateway');\nconst r = $input.first().json || {};\nconst p = ctx.payload;\nconst out = [];\nconst say = (chatId, text) => out.push({ json: { chatId, text } });\nconst when = iso => iso ? new Date(iso).toLocaleString('ru-RU', { timeZone: 'Europe/Prague', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '?';\nconst lockText = l => l ? '«' + esc(l.jobName) + '», запустил ' + esc(l.by || '?') + ' ' + when(l.since) : '';\nconst num = v => v == null ? 'не удалось прочитать' : String(v);\n\nif (r.error || typeof r.ok !== 'boolean') {\n  say(ctx.chatId, '⏸ <b>Рабочий компьютер сейчас недоступен</b> — выключен или на нём не запущен n8n.\\nПопробуйте позже.');\n  if (ctx.role !== 'owner' && p.action === 'run') say(OWNER, '⏸ ' + esc(ctx.name) + ' хотел запустить «' + esc(ctx.jobTitle) + '», но ПК недоступен.');\n  return out;\n}\nif (p.action === 'run') {\n  if (r.started) {\n    say(ctx.chatId, '▶️ <b>Запущено: ' + ctx.jobTitle + '</b>' + (p.dryRun ? ' (тестовый режим, без записи)' : '') + '\\nОтчёт придёт сюда, когда прогон закончится.');\n    if (ctx.role !== 'owner') say(OWNER, '▶️ ' + esc(ctx.name) + ' запустил «' + ctx.jobTitle + '».');\n  } else if (r.busy) say(ctx.chatId, '⏳ Сейчас уже идёт прогон: ' + lockText(r.lock) + '.\\nДождитесь отчёта и запустите снова.');\n  else say(ctx.chatId, '⚠️ Не удалось запустить: ' + esc(r.error || 'неизвестная ошибка'));\n  return out;\n}\nif (p.action === 'status') {\n  const lines = ['📊 <b>Состояние</b>'];\n  if (r.busy) lines.push('⏳ Идёт прогон: ' + lockText(r.lock));\n  else lines.push('✅ Сейчас ничего не запущено' + (r.lock && r.lock.stale && ctx.role === 'owner' ? ' (есть старая блокировка: ' + lockText(r.lock) + ' — /unlock)' : ''));\n  lines.push('');\n  lines.push('Баннеров в 01_OUT_Banners: ' + num(r.banners));\n  lines.push('Новых строк в 02 (ещё не сверены с базой): ' + num(r.new02));\n  lines.push('Сомнительных строк в 02: ' + num(r.review02) + (r.review02 ? ' — похожи на площадку из базы, но не совпадают точно. Причина — в столбце Automation Notes; «ok» в Human Notes = добавить в 03' : ''));\n  lines.push('В 03 ждут поиска контактов: ' + num(r.todo03));\n  lines.push('LLM Server: ' + (r.ollama ? 'работает' : '⚠️ не отвечает (баннеры и поиск контактов не пойдут)'));\n  say(ctx.chatId, lines.join('\\n'));\n  return out;\n}\nif (p.action === 'unlock') {\n  say(ctx.chatId, r.unlocked ? '🔓 Блокировка снята: ' + lockText(r.lock) : 'Блокировки не было.');\n  return out;\n}\nreturn out;"
+      }
+    },
+    {
+      "id": "0427ee29-f02a-4e21-bc84-46ba548290bb",
+      "name": "Send Reply",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1300,
+        1350
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_ME",
+          "name": "telegramApi credential"
+        }
+      }
+    },
+    {
+      "id": "d6214f73-ce15-4687-872f-2ed1e600b1e4",
+      "name": "Add User",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        900,
+        1500
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "upsert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "<DATA_TABLE_ID>",
+          "cachedResultName": "tourvenues_bot_users"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "tg_id",
+              "condition": "eq",
+              "keyValue": "={{ $json.newId }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tg_id": "={{ $json.newId }}",
+            "name": "={{ $json.newName }}",
+            "role": "client"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "tg_id",
+              "displayName": "tg_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "role",
+              "displayName": "role",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "cf64eddf-ee6a-47ed-9be8-efebcfa7712e",
+      "name": "Granted",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        1500
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "return $input.all().map(i => ({ json: { chatId: String(i.json.tg_id),\n  text: '✅ Доступ к боту Tour Venues открыт.\\nКнопки «📋 Меню» и «📊 Состояние» — внизу экрана, под полем ввода. Отчёт о каждом прогоне придёт сюда.' } }));"
+      }
+    },
+    {
+      "id": "de014d15-476f-463f-a04e-b68c41850ff5",
+      "name": "Send Keyboard",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        900,
+        1650
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.text }}",
+        "replyMarkup": "replyKeyboard",
+        "replyKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "📋 Меню"
+                  },
+                  {
+                    "text": "📊 Состояние"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "replyKeyboardOptions": {
+          "resize_keyboard": true
+        },
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_ME",
+          "name": "telegramApi credential"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram": {
+      "main": [
+        [
+          {
+            "node": "Find User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find User": {
+      "main": [
+        [
+          {
+            "node": "Decide",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decide": {
+      "main": [
+        [
+          {
+            "node": "Route",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route": {
+      "main": [
+        [
+          {
+            "node": "Send Text",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Menu",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Confirm (owner)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Confirm (client)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Grant Ask",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Answer Callback",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Close Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Call PC",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Add User",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Keyboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call PC": {
+      "main": [
+        [
+          {
+            "node": "After PC",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "After PC": {
+      "main": [
+        [
+          {
+            "node": "Send Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add User": {
+      "main": [
+        [
+          {
+            "node": "Granted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Granted": {
+      "main": [
+        [
+          {
+            "node": "Send Keyboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

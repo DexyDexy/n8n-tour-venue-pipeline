@@ -1,0 +1,1310 @@
+{
+  "name": "TourVenues_11_banner_venue_extractor",
+  "nodes": [
+    {
+      "id": "544b9e79-54b0-4255-9798-c83f1ff91df9",
+      "name": "Start",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "a7565676-1c09-42ca-86e4-8a964a9fe676",
+      "name": "Settings",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        300,
+        300
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "s-dry",
+              "name": "dryRun",
+              "value": "={{ $json.dryRun === true }}",
+              "type": "boolean"
+            },
+            {
+              "id": "s-max",
+              "name": "maxFiles",
+              "value": "={{ Number($json.maxFiles) > 0 ? Number($json.maxFiles) : 100 }}",
+              "type": "number"
+            },
+            {
+              "id": "s-model",
+              "name": "model",
+              "value": "qwen3-vl:32b-instruct",
+              "type": "string"
+            },
+            {
+              "id": "s-chat",
+              "name": "telegramChatId",
+              "value": "<OWNER_TELEGRAM_CHAT_ID>",
+              "type": "string"
+            },
+            {
+              "id": "s-req",
+              "name": "requestChatId",
+              "value": "={{ $json.chatId ? String($json.chatId) : '' }}",
+              "type": "string"
+            },
+            {
+              "id": "s-by",
+              "name": "requestedBy",
+              "value": "={{ $json.requestedBy || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "s-year",
+              "name": "year",
+              "value": "={{ $now.setZone('Europe/Prague').toFormat('yyyy') }}",
+              "type": "string"
+            },
+            {
+              "id": "s-month",
+              "name": "month",
+              "value": "={{ $now.setZone('Europe/Prague').toFormat('MM') }}",
+              "type": "string"
+            },
+            {
+              "id": "s-day",
+              "name": "day",
+              "value": "={{ $now.setZone('Europe/Prague').toFormat('dd') }}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "8b85fbf0-e446-4192-b600-8056f35cb944",
+      "name": "From Bot",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        100,
+        450
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "4be7210b-afcf-4612-8e14-60b185a6661d",
+      "name": "Find Year Folder",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        500,
+        300
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "fileFolder",
+        "searchMethod": "query",
+        "queryString": "={{ \"'<DRIVE_FOLDER_PROCESSED_ID>' in parents and name = '\" + $('Settings').first().json.year + \"' and mimeType = 'application/vnd.google-apps.folder' and trashed = false\" }}",
+        "returnAll": false,
+        "limit": 1,
+        "filter": {},
+        "options": {
+          "fields": [
+            "id",
+            "name"
+          ]
+        }
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "googleApi credential"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "id": "be1391ef-6a1e-476e-bba4-5df837731c36",
+      "name": "Year Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        700,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.id }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "604b44ee-bc47-4982-831f-2a0e3b439b0e",
+      "name": "Find Month Folder",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        900,
+        300
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "fileFolder",
+        "searchMethod": "query",
+        "queryString": "={{ \"'\" + $json.id + \"' in parents and name = '\" + $('Settings').first().json.month + \"' and mimeType = 'application/vnd.google-apps.folder' and trashed = false\" }}",
+        "returnAll": false,
+        "limit": 1,
+        "filter": {},
+        "options": {
+          "fields": [
+            "id",
+            "name"
+          ]
+        }
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "googleApi credential"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "id": "9503fa21-2e9e-4e4e-9af6-2b690a0be580",
+      "name": "Create Year Folder",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        900,
+        450
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "folder",
+        "operation": "create",
+        "name": "={{ $('Settings').first().json.year }}",
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "<DRIVE_FOLDER_PROCESSED_ID>"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "googleApi credential"
+        }
+      }
+    },
+    {
+      "id": "45bfb3ff-5b52-4f0d-8968-9032fc399de6",
+      "name": "Month Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.id }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "64ed0f26-3443-4048-b5db-155033177744",
+      "name": "Find Day Folder",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        1300,
+        300
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "fileFolder",
+        "searchMethod": "query",
+        "queryString": "={{ \"'\" + $json.id + \"' in parents and name = '\" + $('Settings').first().json.day + \"' and mimeType = 'application/vnd.google-apps.folder' and trashed = false\" }}",
+        "returnAll": false,
+        "limit": 1,
+        "filter": {},
+        "options": {
+          "fields": [
+            "id",
+            "name"
+          ]
+        }
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "googleApi credential"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "id": "47ccbf11-700f-4970-8034-585814371e10",
+      "name": "Create Month Folder",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        1300,
+        450
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "folder",
+        "operation": "create",
+        "name": "={{ $('Settings').first().json.month }}",
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Find Year Folder').first().json.id || $('Create Year Folder').first().json.id }}"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "googleApi credential"
+        }
+      }
+    },
+    {
+      "id": "620c37ca-b07a-4dd8-bfe4-16a0efab3bd5",
+      "name": "Day Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1500,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.id }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "627564ac-7c17-4dc0-bdb2-566db5cfb589",
+      "name": "Target Folder",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1700,
+        300
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "t-id",
+              "name": "targetFolderId",
+              "value": "={{ $json.id }}",
+              "type": "string"
+            },
+            {
+              "id": "t-path",
+              "name": "targetPath",
+              "value": "={{ '02_OUT_ProcessedBanners/' + $('Settings').first().json.year + '/' + $('Settings').first().json.month + '/' + $('Settings').first().json.day + '/' }}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "1e5e9926-4f31-4f3c-a06d-0828d0291799",
+      "name": "Create Day Folder",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        1700,
+        450
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "folder",
+        "operation": "create",
+        "name": "={{ $('Settings').first().json.day }}",
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Find Month Folder').first().json.id || $('Create Month Folder').first().json.id }}"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "googleApi credential"
+        }
+      }
+    },
+    {
+      "id": "586bc0fd-57d4-45e6-bf46-476e223e92ec",
+      "name": "Read Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1900,
+        300
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "<SHEET_EXTRACTED_ID>"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gid=0",
+          "cachedResultName": "Sheet1"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "googleApi credential"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "b3e9fce3-4fa5-4a38-b8a9-e6742be73fbe",
+      "name": "List Banners",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        2100,
+        300
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "fileFolder",
+        "searchMethod": "query",
+        "queryString": "'<DRIVE_FOLDER_INBOX_ID>' in parents and mimeType contains 'image/' and trashed = false",
+        "returnAll": true,
+        "filter": {},
+        "options": {
+          "fields": [
+            "id",
+            "name",
+            "mimeType"
+          ]
+        }
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "googleApi credential"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "570d8078-f797-4629-beb7-0ed9fd2f8692",
+      "name": "Select Files",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2300,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Баннеры по имени (скриншоты называются по времени — получается по порядку съёмки)\nconst s = $('Settings').first().json;\nconst files = $input.all().map(i => i.json).filter(f => f.id && /^image\\//.test(f.mimeType || ''))\n  .sort((a, b) => String(a.name).localeCompare(String(b.name), 'en', { numeric: true }))\n  .slice(0, s.maxFiles);\nreturn [{ json: { count: files.length, files } }];"
+      }
+    },
+    {
+      "id": "016e841a-592c-401c-b1d3-86bc1460a68b",
+      "name": "Has Banners?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2500,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.count }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "7183a2a7-7532-4161-9041-f7543cc44f18",
+      "name": "Split Files",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        2700,
+        300
+      ],
+      "parameters": {
+        "fieldToSplitOut": "files",
+        "include": "noOtherFields",
+        "options": {}
+      }
+    },
+    {
+      "id": "675c68f6-329d-488a-8589-b432ac65e010",
+      "name": "Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2700,
+        450
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const s = $('Settings').first().json;\nconst target = $('Target Folder').first().json.targetPath;\nconst res = $input.all().map(i => i.json).filter(r => r.fileName);\nconst sum = k => res.reduce((a, r) => a + (r[k] || 0), 0);\nconst errors = res.filter(r => r.status !== 'ok');\nconst esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst lines = [];\nlines.push('<b>Tour Venues: баннеры обработаны</b>' + (s.dryRun ? ' (тестовый режим, без записи)' : ''));\nif (!res.length) lines.push('Новых баннеров в папке нет.');\nelse {\n  lines.push('Баннеров: ' + res.length + (errors.length ? ', с ошибкой: ' + errors.length : ''));\n  lines.push('Концертов найдено: ' + sum('found'));\n  lines.push((s.dryRun ? 'Было бы добавлено' : 'Добавлено в таблицу') + ': ' + (s.dryRun ? sum('wouldAdd') : sum('added')));\n  lines.push('Дубли пропущены: ' + sum('duplicates'));\n  if (sum('noVenue')) lines.push('Без NAME (не внесены): ' + sum('noVenue'));\n  if (!s.dryRun) lines.push('Перенесено в ' + esc(target) + ': ' + res.filter(r => r.moved).length);\n  for (const e of errors.slice(0, 10)) lines.push('⚠️ ' + esc(e.fileName) + ': ' + esc(e.error));\n  if (errors.length) lines.push('Баннеры с ошибкой остались во входящей папке.');\n}\nreturn [{ json: { text: lines.join('\\n'), banners: res.length, found: sum('found'), added: sum('added'), duplicates: sum('duplicates'), noVenue: sum('noVenue'), errors: errors.length, details: res } }];"
+      }
+    },
+    {
+      "id": "a7a15a9e-5471-4c18-b6b4-190fd0a13151",
+      "name": "Download Banner",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        3100,
+        300
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "file",
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.id }}"
+        },
+        "options": {
+          "binaryPropertyName": "data"
+        }
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "googleApi credential"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "59867928-2bdb-4bc8-aa1b-5bce81059e17",
+      "name": "Build Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3300,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const s = $('Settings').first().json;\nconst file = $('Loop Banners').first().json;\nlet images = [];\ntry {\n  const buf = await this.helpers.getBinaryDataBuffer(0, 'data');\n  images = [buf.toString('base64')];\n} catch (e) {}\nconst body = {\n  model: s.model,\n  stream: false,\n  think: false,\n  options: { temperature: 0, num_ctx: 8192 },\n  messages: [{ role: 'user', content: \"The attached image is a screenshot of a concert tour banner (often an Instagram post, sometimes a news article).\\nExtract EVERY concert/show listed on the banner.\\nAnswer with JSON only, no markdown, one show per line, exactly in this format:\\n{\\\"band\\\":\\\"<headlining band>\\\",\\\"shows\\\":[\\n[\\\"<date as written>\\\",\\\"<country code>\\\",\\\"<city>\\\",\\\"<venue>\\\"],\\n...\\n]}\\n- country code: two letters, uppercase (ISO 3166-1 alpha-2, e.g. DE, PL, NL; for the United Kingdom use UK). If the banner does not show the country, infer it from the city.\\n- city and venue: as written on the banner but in normal capitalization (not ALL CAPS). Venue \\\"\\\" if not shown.\\nRows are often written as \\\"date. city. venue\\\" or \\\"date venue......city, CC\\\" - read each row carefully and do not mix up city and venue.\\nIgnore the phone/app interface (status bar, likes, comments, usernames, stories, ads). Do not invent shows. If the image is not a tour banner, return {\\\"band\\\":\\\"\\\",\\\"shows\\\":[]}.\", images }]\n};\nreturn [{ json: { fileId: file.id, fileName: file.name, hasImage: images.length > 0, body } }];"
+      }
+    },
+    {
+      "id": "83367da5-74a4-4c01-8536-a704d1dd42b1",
+      "name": "Ollama Extract",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        3500,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:11434/api/chat",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "a7479287-0cc9-4e78-8554-00f547629e46",
+      "name": "Parse Shows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3700,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "\nfunction norm(s) {\n  return String(s || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase()\n    .replace(/ß/g, 'ss').replace(/&/g, ' and ').replace(/^the\\s+/, '').replace(/[^a-z0-9]+/g, '');\n}\n// «PSYKA FESTIVAL» → «Psyka Festival», «GENT» → «Gent»; у площадок короткие аббревиатуры (RCA, UBU, ZDB) не трогаем\nfunction fixCaps(s, keepAcronym) {\n  s = String(s || '').trim().replace(/\\s+/g, ' ');\n  if (!/[A-ZÀ-Þ]/.test(s) || s !== s.toUpperCase() || (keepAcronym && /^[A-Z0-9]{1,4}$/.test(s))) return s;\n  return s.toLowerCase().replace(/(^|[\\s\\-\\/(.])(\\p{L})/gu, (m, a, b) => a + b.toUpperCase());\n}\nfunction venueKey(country, place, venue) {\n  return norm(country) + '|' + (norm(venue) || 'city:' + norm(place));\n}\n\nconst req = $('Build Request').first().json;\nconst res = $input.first().json;\nconst out = { fileId: req.fileId, fileName: req.fileName, band: '', found: 0, rows: [], duplicates: 0, noVenue: 0, status: 'ok', error: '' };\nlet data = null;\nif (!req.hasImage) { out.status = 'error'; out.error = 'download failed'; }\nelse if (res.error || !res.message) { out.status = 'error'; out.error = 'ollama: ' + JSON.stringify(res.error || res).slice(0, 200); }\nelse {\n  const m = String(res.message.content || '').match(/\\{[\\s\\S]*\\}/);\n  try { data = JSON.parse(m[0]); } catch (e) { out.status = 'error'; out.error = 'bad JSON from model: ' + String(res.message.content || '').slice(0, 100); }\n}\nif (data) {\n  out.band = String(data.band || '').trim();\n  // Уже известные площадки: таблица + добавленные раньше в этом же запуске\n  const seen = new Set();\n  for (const r of $('Read Sheet').all().map(i => i.json)) if (r.COUNTRY || r.NAME) seen.add(venueKey(r.COUNTRY, r.CITY, r.NAME));\n  for (let k = 0; k < $runIndex; k++) {\n    try { for (const it of $('Parse Shows').all(0, k)) for (const r of it.json.rows || []) seen.add(venueKey(r.COUNTRY, r.CITY, r.NAME)); } catch (e) {}\n  }\n  for (const sh of Array.isArray(data.shows) ? data.shows : []) {\n    const v = Array.isArray(sh) ? sh : [sh.date, sh.country, sh.city, sh.venue];\n    let country = String(v[1] || '').trim().toUpperCase();\n    // Части Великобритании (EN, SCO…) → UK; SL — частая ошибка модели для Словении\n    country = { GB: 'UK', EN: 'UK', ENG: 'UK', SCO: 'UK', SCT: 'UK', WAL: 'UK', WLS: 'UK', NIR: 'UK', SL: 'SI' }[country] || country;\n    const place = fixCaps(v[2], false);\n    const venue = fixCaps(v[3], true);\n    if (!place && !venue) continue;\n    out.found++;\n    // без площадки (или с заглушкой TBA / TBC / «-») строку не вносим\n    if (!venue || /^(tba|tbc|tbd|n\\/?a|[-–—?.]+)$/i.test(venue)) { out.noVenue++; continue; }\n    const key = venueKey(country, place, venue);\n    if (seen.has(key)) { out.duplicates++; continue; }\n    seen.add(key);\n    out.rows.push({ COUNTRY: country, CITY: place, NAME: venue, 'Link to banner': 'https://drive.google.com/file/d/' + req.fileId + '/view' });\n  }\n}\nreturn [{ json: out }];"
+      }
+    },
+    {
+      "id": "10373746-dfdb-453b-ba72-da29cbd22fb4",
+      "name": "Parsed OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3900,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "ok",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "leftValue": "={{ $('Settings').first().json.dryRun }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "146ad592-15d8-4ac7-b95d-74dca971ecf4",
+      "name": "Has New Rows?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4100,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.rows.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "da1e5c2a-3489-4f51-8fdb-ea40c64792ae",
+      "name": "Split Rows",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        4300,
+        300
+      ],
+      "parameters": {
+        "fieldToSplitOut": "rows",
+        "include": "noOtherFields",
+        "options": {}
+      }
+    },
+    {
+      "id": "6fce0b3f-774f-472f-99df-a8dd598d2b77",
+      "name": "Append Rows",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        4500,
+        300
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "<SHEET_EXTRACTED_ID>"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gid=0",
+          "cachedResultName": "Sheet1"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "COUNTRY": "={{ $json.COUNTRY }}",
+            "CITY": "={{ $json.CITY }}",
+            "NAME": "={{ $json.NAME }}",
+            "Link to banner": "={{ $json[\"Link to banner\"] }}"
+          },
+          "schema": [
+            {
+              "id": "COUNTRY",
+              "displayName": "COUNTRY",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "CITY",
+              "displayName": "CITY",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "NAME",
+              "displayName": "NAME",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Link to banner",
+              "displayName": "Link to banner",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {
+          "cellFormat": "RAW",
+          "useAppend": true
+        }
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "googleApi credential"
+        }
+      }
+    },
+    {
+      "id": "2b3e462b-3229-41ae-8109-f02e3d10974e",
+      "name": "Move Banner",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        4300,
+        450
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "file",
+        "operation": "move",
+        "fileId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Parse Shows').first().json.fileId }}"
+        },
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Target Folder').first().json.targetFolderId }}"
+        }
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "googleApi credential"
+        }
+      },
+      "executeOnce": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "d1b8b8c1-c4eb-4272-a6e1-a4b0fa9e4d9c",
+      "name": "Banner Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4100,
+        450
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const p = $('Parse Shows').first().json;\nconst s = $('Settings').first().json;\nlet moved = false, moveError = '';\nif (p.status === 'ok' && !s.dryRun) {\n  const m = $input.first().json;\n  if (m && m.error) moveError = 'move failed: ' + JSON.stringify(m.error).slice(0, 150);\n  else moved = true;\n}\nreturn [{ json: {\n  fileName: p.fileName, band: p.band, found: p.found, added: s.dryRun ? 0 : p.rows.length,\n  wouldAdd: p.rows.length, duplicates: p.duplicates, noVenue: p.noVenue, moved,\n  status: moveError ? 'error' : p.status, error: p.error || moveError,\n  rows: p.rows\n} }];"
+      }
+    },
+    {
+      "id": "03d028fb-2f3f-447f-a289-6d33451bf46b",
+      "name": "Loop Banners",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        2900,
+        300
+      ],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "63605b27-2d9f-4173-8013-36ec6ce7806d",
+      "name": "Recipients",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2900,
+        450
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const s = $('Settings').first().json;\nconst esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst owner = String(s.telegramChatId);\nconst asker = String(s.requestChatId || '').trim();\nconst text = $json.text;\nconst out = [];\nif (asker && asker !== owner) out.push({ json: { chatId: asker, text } });\nout.push({ json: { chatId: owner, text: (asker && asker !== owner ? '👤 Запустил: ' + esc(s.requestedBy || asker) + '\\n' : '') + text } });\nreturn out;"
+      }
+    },
+    {
+      "id": "9359a840-8135-4d90-97af-55513b77d82a",
+      "name": "Send Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3100,
+        450
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_ME",
+          "name": "telegramApi credential"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Settings": {
+      "main": [
+        [
+          {
+            "node": "Find Year Folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "From Bot": {
+      "main": [
+        [
+          {
+            "node": "Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Year Folder": {
+      "main": [
+        [
+          {
+            "node": "Year Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Year Exists?": {
+      "main": [
+        [
+          {
+            "node": "Find Month Folder",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Year Folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Month Folder": {
+      "main": [
+        [
+          {
+            "node": "Month Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Year Folder": {
+      "main": [
+        [
+          {
+            "node": "Find Month Folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Month Exists?": {
+      "main": [
+        [
+          {
+            "node": "Find Day Folder",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Month Folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Day Folder": {
+      "main": [
+        [
+          {
+            "node": "Day Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Month Folder": {
+      "main": [
+        [
+          {
+            "node": "Find Day Folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Day Exists?": {
+      "main": [
+        [
+          {
+            "node": "Target Folder",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Day Folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Target Folder": {
+      "main": [
+        [
+          {
+            "node": "Read Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Day Folder": {
+      "main": [
+        [
+          {
+            "node": "Target Folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Sheet": {
+      "main": [
+        [
+          {
+            "node": "List Banners",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Banners": {
+      "main": [
+        [
+          {
+            "node": "Select Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select Files": {
+      "main": [
+        [
+          {
+            "node": "Has Banners?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Banners?": {
+      "main": [
+        [
+          {
+            "node": "Split Files",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Files": {
+      "main": [
+        [
+          {
+            "node": "Loop Banners",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Report": {
+      "main": [
+        [
+          {
+            "node": "Recipients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Banner": {
+      "main": [
+        [
+          {
+            "node": "Build Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Request": {
+      "main": [
+        [
+          {
+            "node": "Ollama Extract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Extract": {
+      "main": [
+        [
+          {
+            "node": "Parse Shows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Shows": {
+      "main": [
+        [
+          {
+            "node": "Parsed OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parsed OK?": {
+      "main": [
+        [
+          {
+            "node": "Has New Rows?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Banner Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has New Rows?": {
+      "main": [
+        [
+          {
+            "node": "Split Rows",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Move Banner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Rows": {
+      "main": [
+        [
+          {
+            "node": "Append Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Rows": {
+      "main": [
+        [
+          {
+            "node": "Move Banner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Move Banner": {
+      "main": [
+        [
+          {
+            "node": "Banner Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Banner Result": {
+      "main": [
+        [
+          {
+            "node": "Loop Banners",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Banners": {
+      "main": [
+        [
+          {
+            "node": "Report",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Download Banner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recipients": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

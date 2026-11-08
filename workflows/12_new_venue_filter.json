@@ -1,0 +1,845 @@
+{
+  "name": "TourVenues_12_new_venue_filter",
+  "nodes": [
+    {
+      "id": "80fcbadc-123c-402e-83a3-c8ba71fec8f9",
+      "name": "Start",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "ecd08bb7-53fb-434b-9063-fbfaf85229c7",
+      "name": "Settings",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        300,
+        300
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "s-dry",
+              "name": "dryRun",
+              "value": "={{ $json.dryRun === true }}",
+              "type": "boolean"
+            },
+            {
+              "id": "s-chat",
+              "name": "telegramChatId",
+              "value": "<OWNER_TELEGRAM_CHAT_ID>",
+              "type": "string"
+            },
+            {
+              "id": "s-req",
+              "name": "requestChatId",
+              "value": "={{ $json.chatId ? String($json.chatId) : '' }}",
+              "type": "string"
+            },
+            {
+              "id": "s-by",
+              "name": "requestedBy",
+              "value": "={{ $json.requestedBy || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "s-date",
+              "name": "today",
+              "value": "={{ $now.setZone('Europe/Prague').toFormat('yyyy-MM-dd') }}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "d5160335-6e91-4140-a714-5dbf893f10c6",
+      "name": "From Bot",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        100,
+        450
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "1c425362-cb81-408a-aaae-32ffc906d497",
+      "name": "Read Extracted",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        500,
+        300
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "<SHEET_EXTRACTED_ID>"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gid=0",
+          "cachedResultName": "Sheet1"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "googleApi credential"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "4eb53546-3777-4cff-91be-9a452b709a90",
+      "name": "Read Base",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        700,
+        300
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "<SHEET_MASTER_DB_ID>"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gid=0",
+          "cachedResultName": "Sheet1"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "googleApi credential"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "de4cccb1-7565-4297-9362-e09826c1abd6",
+      "name": "Read New Data",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        900,
+        300
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "<SHEET_NEW_VENUES_ID>"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gid=0",
+          "cachedResultName": "Sheet1"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "googleApi credential"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "9bd223cc-799c-4d45-8d3a-c5c8f58edb7e",
+      "name": "Classify",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "\nfunction norm(s) {\n  return String(s || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase()\n    .replace(/ß/g, 'ss').replace(/&/g, ' and ').replace(/^the\\s+/, '').replace(/[^a-z0-9]+/g, '');\n}\nconst COUNTRY_ALIAS = { GB: 'UK', EN: 'UK', ENG: 'UK', SCO: 'UK', SCT: 'UK', WAL: 'UK', NIR: 'UK', SL: 'SI', SLO: 'SI',\n  FIN: 'FI', ROM: 'RO', TUR: 'TR', ISL: 'IS', ICE: 'IS', ARM: 'AM', BIH: 'BA', ALB: 'AL', KOS: 'XK', ISR: 'IL',\n  SPAIN: 'ES', GERMANY: 'DE', FRANCE: 'FR', ITALY: 'IT', GREENLAND: 'GL', KYRGYZSTAN: 'KG', SOUTHAFRICA: 'ZA' };\nfunction cc(s) { const c = norm(s).toUpperCase(); return COUNTRY_ALIAS[c] || c; }\nconst ISO = new Set(('AD AE AF AG AL AM AO AR AT AU AZ BA BB BD BE BF BG BH BI BJ BN BO BR BS BT BW BY BZ CA CD CF CG CH CI CL CM CN CO CR CU CV CY CZ ' +\n  'DE DJ DK DM DO DZ EC EE EG ER ES ET FI FJ FM FO FR GA GD GE GH GL GM GN GQ GR GT GW GY HK HN HR HT HU ID IE IL IN IQ IR IS IT JM JO JP ' +\n  'KE KG KH KI KM KN KP KR KW KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MG MH MK ML MM MN MO MR MT MU MV MW MX MY MZ NA NE NG NI NL NO NP NR NZ ' +\n  'OM PA PE PG PH PK PL PR PS PT PW PY QA RO RS RU RW SA SB SC SD SE SG SI SK SL SM SN SO SR SS ST SV SY SZ TD TG TH TJ TL TM TN TO TR TT TV TW TZ ' +\n  'UA UG UK US UY UZ VA VC VE VN VU WS XK YE ZA ZM ZW').split(' '));\nconst CITY_ALIAS = [\n  ['warsaw', 'warszawa'], ['krakow', 'cracow'], ['gent', 'ghent'], ['brussels', 'brussel', 'bruxelles'],\n  ['antwerp', 'antwerpen', 'anvers'], ['bruges', 'brugge'], ['leuven', 'louvain'], ['liege', 'luik'],\n  ['hague', 'denhaag'], ['shertogenbosch', 'denbosch'], ['lisbon', 'lisboa'], ['porto', 'oporto'], ['seville', 'sevilla'],\n  ['prague', 'praha', 'prag'], ['vienna', 'wien'], ['munich', 'munchen'], ['cologne', 'koln'], ['nuremberg', 'nurnberg'],\n  ['hanover', 'hannover'], ['milan', 'milano'], ['rome', 'roma'], ['florence', 'firenze'], ['turin', 'torino'],\n  ['naples', 'napoli'], ['venice', 'venezia'], ['genoa', 'genova'], ['copenhagen', 'kobenhavn'],\n  ['gothenburg', 'goteborg'], ['geneva', 'geneve', 'genf'], ['basel', 'basle', 'bale'], ['zurich', 'zuerich'],\n  ['belgrade', 'beograd'], ['bucharest', 'bucuresti'], ['athens', 'athina'], ['kyiv', 'kiev'],\n  ['luxembourg', 'luxemburg'], ['dunkirk', 'dunkerque'], ['marseille', 'marseilles'], ['lyon', 'lyons']\n];\nconst CITY_CANON = {};\nfor (const g of CITY_ALIAS) for (const c of g) CITY_CANON[c] = g[0];\nfunction cityKey(s) { const x = norm(s); return CITY_CANON[x] || x; }\nfunction lev(a, b) {\n  if (Math.abs(a.length - b.length) > 2) return 9;\n  let prev = Array.from({ length: b.length + 1 }, (x, j) => j);\n  for (let i = 1; i <= a.length; i++) {\n    const cur = [i];\n    for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));\n    prev = cur;\n  }\n  return prev[b.length];\n}\nfunction words(s) {\n  return String(s || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 4);\n}\n// 2 — точно тот же город, 1 — похоже (опечатка), 0 — другой\nfunction cityLevel(a, b) {\n  const x = cityKey(a), y = cityKey(b);\n  if (!x || !y || x === y) return 2;\n  if (Math.min(x.length, y.length) >= 4 && (x.includes(y) || y.includes(x))) return 2;\n  if (Math.min(x.length, y.length) >= 6 && lev(x, y) <= 2) return 1;\n  for (const p of words(a)) for (const q of words(b)) {\n    const pc = CITY_CANON[p] || p, qc = CITY_CANON[q] || q;\n    if (pc === qc || (Math.min(pc.length, qc.length) >= 6 && lev(pc, qc) <= 1)) return 1;\n  }\n  return 0;\n}\n// Похожие (но не одинаковые) названия: одно содержит другое или опечатка\nfunction nameSimilar(a, b) {\n  if (!a || !b || a === b) return false;\n  const m = Math.min(a.length, b.length);\n  return (m >= 4 && (a.includes(b) || b.includes(a))) || (m >= 6 && lev(a, b) <= 2);\n}\n// В базе в одной ячейке бывает несколько вариантов: «Kult41 - Kult 41», «Gowiththeflow > KulturA.»\nfunction variants(name) {\n  return String(name || '').split(/\\s+[-–—|>\\/]\\s+|\\s+aka\\s+/i).map(v => v.trim()).filter(Boolean);\n}\n// «Ядро» названия: без артикля в начале, без слов-типов (bar, club, salle…) и без названия своего города.\n// Le Truskel = Truskel, Molotow Club = Molotow, Fuzz Cartaxo (Cartaxo) = Fuzz, Les Vivres de l'Art = Vivres de L'Art\nconst ARTICLES = new Set(['the', 'le', 'la', 'les', 'l', 'el', 'los', 'las', 'il', 'lo', 'de', 'het', 'die', 'der', 'das', 'den']);\nconst TYPES = new Set(['bar', 'club', 'klub', 'cafe', 'pub', 'sala', 'salle', 'festival', 'official', 'officiel']);\nfunction core(name, city) {\n  const t = String(name || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/ß/g, 'ss')\n    .replace(/&/g, ' and ').split(/[^a-z0-9]+/).filter(Boolean);\n  const cw = new Set(words(city).concat(words(CITY_CANON[norm(city)] || '')));\n  while (t.length > 1 && ARTICLES.has(t[0])) t.shift();\n  const k = t.filter(w => !TYPES.has(w) && !cw.has(w)).join('');\n  return k.length >= 3 ? k : norm(name);\n}\nfunction nameKeys(name, city) { return [...new Set(variants(name).map(v => core(v, city)).filter(Boolean))]; }\n// Индекс «страна|ядро названия» → список городов\nfunction makeIndex() {\n  const m = new Map(), rows = new Map();\n  return {\n    add(r) {\n      for (const n of nameKeys(r.NAME, r.CITY)) {\n        const k = cc(r.COUNTRY) + '|' + n;\n        if (!m.has(k)) { m.set(k, []); rows.set(k, []); }\n        m.get(k).push(String(r.CITY || '').trim());\n        rows.get(k).push(r);\n      }\n    },\n    cities(r) { return [].concat(...nameKeys(r.NAME, r.CITY).map(n => m.get(cc(r.COUNTRY) + '|' + n) || [])); },\n    has(r) { return this.cities(r).some(c => cityLevel(c, r.CITY) === 2); },\n    // строка, с которой совпало (для пометки «… (CH | Bern | Spinnerei)»)\n    find(r) {\n      for (const n of nameKeys(r.NAME, r.CITY)) {\n        const hit = (rows.get(cc(r.COUNTRY) + '|' + n) || []).find(e => cityLevel(e.CITY, r.CITY) === 2);\n        if (hit) return hit;\n      }\n      return null;\n    }\n  };\n}\n\nconst s = $('Settings').first().json;\nconst S = v => String(v == null ? '' : v);\nconst clean = r => ({ COUNTRY: S(r.COUNTRY).trim(), CITY: S(r.CITY).trim().replace(/\\s+/g, ' '), NAME: S(r.NAME).trim().replace(/\\s+/g, ' ') });\nconst fmt = r => [r.COUNTRY, r.CITY || '-', r.NAME].join(' | ');\nconst ext = $('Read Extracted').all().map(i => i.json).filter(r => r.row_number);\n\n// База: точные совпадения, площадки по стране (для похожих названий), в каких странах встречается город\nconst base = makeIndex();\nconst baseByName = new Map(), baseByCountry = new Map(), cityCountries = new Map();\nfor (const raw of $('Read Base').all().map(i => i.json)) {\n  if (!raw.NAME) continue;\n  const b = clean(raw), c = cc(b.COUNTRY), k = cityKey(b.CITY);\n  base.add(b);\n  for (const n of nameKeys(b.NAME, b.CITY)) {\n    const e = { COUNTRY: c, CITY: b.CITY, NAME: b.NAME, n };\n    if (!baseByName.has(n)) baseByName.set(n, []);\n    baseByName.get(n).push(e);\n    if (!baseByCountry.has(c)) baseByCountry.set(c, []);\n    baseByCountry.get(c).push(e);\n  }\n  if (k) {\n    if (!cityCountries.has(k)) cityCountries.set(k, new Map());\n    const m = cityCountries.get(k);\n    m.set(c, (m.get(c) || 0) + 1);\n  }\n}\nconst already = makeIndex();\nfor (const r of $('Read New Data').all().map(i => i.json)) if (r.NAME) already.add(clean(r));\n\n// заглушка вместо значения: TBA / TBC / TBD / n/a / «-» / «?»\nconst PLACEHOLDER = /^(n\\/?a|none|unknown|[-–—?.]+)$|\\b(tba|tbc|tbd|tbn)\\b/i;\nconst isOk = r => /^\\s*ok\\b/i.test(S(r['Human Notes']));\n// Итоговые пометки прошлых запусков: такие строки больше не разбираются (кроме «ok» человека у «skipped …»)\nconst FINAL = /^\\s*(added to 03_OUT_newData|skipped as )/i;\nconst ADDED = /^\\s*added to 03_OUT_newData/i;\nconst todo = ext.filter(r => !FINAL.test(S(r['Automation Notes'])) || (isOk(r) && !ADDED.test(S(r['Automation Notes']))));\nconst order = todo.filter(isOk).concat(todo.filter(r => !isOk(r)));\n\n// Почему строка сомнительная (пустой список — не сомнительная)\nfunction doubts(r, seen) {\n  const out = [], c = cc(r.COUNTRY), keys = nameKeys(r.NAME, r.CITY);\n  // без города в 03 не пускаем (если площадка точно есть в базе — строка уже удалена выше)\n  if (!r.CITY) out.push('CITY is empty');\n  if (!ISO.has(c)) out.push('Unknown country code \"' + r.COUNTRY + '\"');\n  // та же площадка в той же стране, но город другой или похожий\n  const other = base.cities(r);\n  if (other.length) {\n    const near = other.filter(x => cityLevel(x, r.CITY) === 1);\n    const list = [...new Set(near.length ? near : other)].slice(0, 3).join(', ');\n    out.push(near.length ? 'Same NAME in base with similar CITY: ' + list : 'Same NAME in base in another CITY: ' + list);\n  } else {\n    // та же площадка в том же городе, но страна другая — обычно ошибка распознавания\n    const cross = [].concat(...keys.map(n => baseByName.get(n) || [])).filter(b => b.COUNTRY !== c && r.CITY && b.CITY && cityLevel(b.CITY, r.CITY) === 2);\n    if (cross.length) out.push('In base with another COUNTRY: ' + fmt(cross[0]));\n  }\n  // похожее название в том же городе\n  if (r.CITY) {\n    const sim = (baseByCountry.get(c) || []).filter(b => b.CITY && keys.some(n => nameSimilar(b.n, n)) && cityLevel(b.CITY, r.CITY) === 2);\n    const uniq = [...new Map(sim.map(b => [b.NAME, b])).values()].slice(0, 2);\n    if (uniq.length) out.push('Similar NAME in base: ' + uniq.map(fmt).join('; '));\n  }\n  // город в базе встречается только в других странах\n  const cityC = r.CITY ? cityCountries.get(cityKey(r.CITY)) : null;\n  if (cityC && !cityC.has(c)) {\n    const total = [...cityC.values()].reduce((a, x) => a + x, 0);\n    if (total >= 2) out.push('CITY \"' + r.CITY + '\" is listed under ' + [...cityC.keys()].slice(0, 3).join('/') + ' in base');\n  }\n  // в NAME стоит город (перепутаны столбцы)\n  const asCity = cityCountries.get(cityKey(r.NAME));\n  if (asCity && (asCity.get(c) || 0) >= 2) out.push('NAME looks like a city - columns mixed up?');\n  // похожая строка выше в этой же таблице\n  const twin = seen.find(e => {\n    if (cc(e.COUNTRY) !== c) return false;\n    const ek = nameKeys(e.NAME, e.CITY);\n    return (ek.some(x => keys.includes(x)) && cityLevel(e.CITY, r.CITY) === 1) ||\n      (r.CITY && e.CITY && ek.some(x => keys.some(n => nameSimilar(x, n))) && cityLevel(e.CITY, r.CITY) === 2);\n  });\n  if (twin) out.push('Possible duplicate of: ' + fmt(twin));\n  return out;\n}\n\nconst res = { bad: [], dup: [], inBase: [], inNew: [], review: [], moved: [], movedOk: 0 };\nconst D = s.today;\nconst notes = [];\nconst setNote = (raw, note) => { if (note !== S(raw['Automation Notes']).trim()) notes.push({ row_number: raw.row_number, note }); };\nconst kept = makeIndex(), seen = [];\nfor (const raw of order) {\n  const r = clean(raw), ok = isOk(raw);\n  const row = Object.assign({ row: raw.row_number }, r);\n  const bad = !r.NAME ? 'no NAME' : !r.COUNTRY ? 'no COUNTRY'\n    : [['NAME', r.NAME], ['COUNTRY', r.COUNTRY], ['CITY', r.CITY]].filter(x => PLACEHOLDER.test(x[1])).map(x => x[0] + ' is \"' + x[1] + '\"').join(', ');\n  if (bad) { res.bad.push(Object.assign({ note: bad }, row)); setNote(raw, 'skipped as invalid ' + D + ': ' + bad); continue; }\n  const twin = kept.find(r);\n  if (twin) { res.dup.push(row); setNote(raw, 'skipped as duplicate ' + D + ': same as row ' + twin.row + ' (' + fmt(twin) + ')'); continue; }\n  kept.add(row);\n  if (already.has(r)) { res.inNew.push(row); seen.push(r); setNote(raw, 'skipped as duplicate ' + D + ': already in 03_OUT_newData'); continue; }\n  const b = ok ? null : base.find(r);\n  if (b) { res.inBase.push(row); seen.push(r); setNote(raw, 'skipped as duplicate ' + D + ': in MASTER BASE (' + fmt(b) + ')'); continue; }\n  const why = ok ? [] : doubts(r, seen);\n  seen.push(r);\n  if (why.length) {\n    const note = why.join('; ').slice(0, 500);\n    res.review.push(Object.assign({ note }, row));\n    setNote(raw, note);\n    continue;\n  }\n  if (ok) res.movedOk++;\n  res.moved.push(Object.assign(row, { COUNTRY: r.COUNTRY.toUpperCase() }));\n  setNote(raw, 'added to 03_OUT_newData ' + D + (ok ? ' (ok by human)' : ''));\n}\n// Проверка перед записью: строки, которым пишем пометку, должны остаться на своих местах\nconst byRow = new Map(ext.map(r => [r.row_number, r]));\nconst snapshot = notes.map(n => { const r = byRow.get(n.row_number);\n  return { row: n.row_number, COUNTRY: S(r.COUNTRY), CITY: S(r.CITY), NAME: S(r.NAME), HN: S(r['Human Notes']) }; });\nres.moved.sort((a, b) => a.row - b.row);\nres.review.sort((a, b) => a.row - b.row);\nreturn [{ json: {\n  dryRun: s.dryRun, total: ext.length, checked: todo.length, finalBefore: ext.length - todo.length,\n  appendCount: res.moved.length, noteCount: notes.length, writeCount: res.moved.length + notes.length,\n  toAppend: res.moved.map(r => ({ COUNTRY: r.COUNTRY, CITY: r.CITY, NAME: r.NAME })),\n  notes, snapshot, res\n} }];"
+      }
+    },
+    {
+      "id": "a18015b4-efe0-4c80-b785-0b0d635d4403",
+      "name": "Write?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1300,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.dryRun }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            },
+            {
+              "leftValue": "={{ $json.writeCount }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "ff53cbd5-36e0-456f-b34a-b6d268b20188",
+      "name": "Re-read Extracted",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1500,
+        300
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "<SHEET_EXTRACTED_ID>"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gid=0",
+          "cachedResultName": "Sheet1"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "googleApi credential"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "0a53bb44-57b9-40b4-a47e-9dc1581a1ed2",
+      "name": "Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        450
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const c = $('Classify').first().json;\nconst r = c.res;\nconst chk = $('Check 02').isExecuted ? $('Check 02').first().json : null;\nconst esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst fmt = x => esc(x.COUNTRY + ' | ' + (x.CITY || '-') + ' | ' + x.NAME);\nconst dry = c.dryRun;\nconst done = !dry && chk && chk.ok;\nconst lines = ['<b>Tour Venues: проверка по MASTER BASE</b>' + (dry ? ' (тестовый режим, без записи)' : '')];\nlines.push('Строк в 02_OUT_extractedData: ' + c.total + (c.finalBefore ? ' (уже с итоговой пометкой, пропущены: ' + c.finalBefore + ')' : ''));\nif (!c.checked) lines.push('Новых строк для проверки нет.');\nelse {\n  lines.push('Проверено строк: ' + c.checked);\n  lines.push((dry ? 'Было бы добавлено' : 'Добавлено') + ' в 03_OUT_newData: ' + r.moved.length + (r.movedOk ? ' (из них по «ok»: ' + r.movedOk + ')' : ''));\n  lines.push('skipped as duplicate: ' + (r.inBase.length + r.dup.length + r.inNew.length) + ' (есть в базе: ' + r.inBase.length + ', дубль в 02: ' + r.dup.length + ', уже в 03: ' + r.inNew.length + ')');\n  lines.push('skipped as invalid (нет NAME / COUNTRY, TBA / TBC): ' + r.bad.length);\n  lines.push('<b>На проверку: ' + r.review.length + '</b>' + (r.review.length ? ' — причина в Automation Notes, «ok» в Human Notes = добавить' : ''));\n  if (chk && !chk.ok) lines.push('⚠️ ' + esc(chk.error) + '. Запустите ещё раз.');\n  if (r.review.length) {\n    lines.push('');\n    for (const x of r.review.slice(0, 15)) lines.push('• ' + fmt(x) + ' — <i>' + esc(x.note) + '</i>');\n    if (r.review.length > 15) lines.push('… и ещё ' + (r.review.length - 15));\n  }\n}\nreturn [{ json: { text: lines.join('\\n'), total: c.total, checked: c.checked, finalBefore: c.finalBefore, added: r.moved.length,\n  inBase: r.inBase.length, dup: r.dup.length, inNew: r.inNew.length, bad: r.bad.length, review: r.review.length,\n  notesWritten: done ? c.noteCount : 0, error: chk && !chk.ok ? chk.error : '', res: r } }];"
+      },
+      "executeOnce": true
+    },
+    {
+      "id": "47710400-a524-4a19-8568-e9963326c0c5",
+      "name": "Check 02",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1700,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const c = $('Classify').first().json;\nconst S = v => String(v == null ? '' : v);\nconst fresh = new Map();\nfor (const r of $input.all().map(i => i.json)) if (r.row_number) fresh.set(r.row_number, r);\nconst changed = c.snapshot.filter(o => {\n  const f = fresh.get(o.row);\n  return !f || S(f.COUNTRY) !== o.COUNTRY || S(f.CITY) !== o.CITY || S(f.NAME) !== o.NAME || S(f['Human Notes']) !== o.HN;\n});\nreturn [{ json: Object.assign({}, c, { ok: !changed.length,\n  error: changed.length ? 'таблица 02 изменилась во время работы (' + changed.length + ' стр.), ничего не записано' : '' }) }];"
+      }
+    },
+    {
+      "id": "574aaa4f-c957-47e0-9b9d-093319bbdfff",
+      "name": "02 Unchanged?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1900,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.ok }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "f8deb6a7-d12a-415c-8956-1ff669855841",
+      "name": "Has New?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2100,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.appendCount }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "7fb1b710-8295-4bbe-bbe3-b890a15801e9",
+      "name": "Split New",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        2300,
+        300
+      ],
+      "parameters": {
+        "fieldToSplitOut": "toAppend",
+        "include": "noOtherFields",
+        "options": {}
+      }
+    },
+    {
+      "id": "e81e17c0-b645-41ce-bb3a-a0e519996215",
+      "name": "Append to New Data",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2500,
+        300
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "<SHEET_NEW_VENUES_ID>"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gid=0",
+          "cachedResultName": "Sheet1"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "COUNTRY": "={{ $json.COUNTRY }}",
+            "CITY": "={{ $json.CITY }}",
+            "NAME": "={{ $json.NAME }}"
+          },
+          "schema": [
+            {
+              "id": "COUNTRY",
+              "displayName": "COUNTRY",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "CITY",
+              "displayName": "CITY",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "NAME",
+              "displayName": "NAME",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {
+          "cellFormat": "RAW",
+          "useAppend": true
+        }
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "googleApi credential"
+        }
+      }
+    },
+    {
+      "id": "72e40f71-71d1-43d4-bc76-3716d29988b0",
+      "name": "Note Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2300,
+        450
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const n = $('Classify').first().json.notes;\nreturn n.length ? n.map(x => ({ json: x })) : [{ json: { row_number: 0 } }];"
+      }
+    },
+    {
+      "id": "7a198a5b-464f-48bc-be0b-ebc6aa2819a1",
+      "name": "Has Notes?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2500,
+        450
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.row_number }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "48310928-003d-4c90-86b9-6ffda03c7989",
+      "name": "Write Notes",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2700,
+        450
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "<SHEET_EXTRACTED_ID>"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gid=0",
+          "cachedResultName": "Sheet1"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": "={{ $json.row_number }}",
+            "Automation Notes": "={{ $json.note }}"
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "Automation Notes",
+              "displayName": "Automation Notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            }
+          ]
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "googleApi credential"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "id": "3f69aece-f314-4f66-b502-568c402c32c4",
+      "name": "Recipients",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1700,
+        450
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const s = $('Settings').first().json;\nconst esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst owner = String(s.telegramChatId);\nconst asker = String(s.requestChatId || '').trim();\nconst text = $json.text;\nconst out = [];\nif (asker && asker !== owner) out.push({ json: { chatId: asker, text } });\nout.push({ json: { chatId: owner, text: (asker && asker !== owner ? '👤 Запустил: ' + esc(s.requestedBy || asker) + '\\n' : '') + text } });\nreturn out;"
+      }
+    },
+    {
+      "id": "594fd50d-4045-4f19-8556-2f45d23fa568",
+      "name": "Send Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1900,
+        450
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.text.length > 4000 ? $json.text.slice(0, 4000) + \"\\n…\" : $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_ME",
+          "name": "telegramApi credential"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Settings": {
+      "main": [
+        [
+          {
+            "node": "Read Extracted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "From Bot": {
+      "main": [
+        [
+          {
+            "node": "Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Extracted": {
+      "main": [
+        [
+          {
+            "node": "Read Base",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Base": {
+      "main": [
+        [
+          {
+            "node": "Read New Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read New Data": {
+      "main": [
+        [
+          {
+            "node": "Classify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify": {
+      "main": [
+        [
+          {
+            "node": "Write?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write?": {
+      "main": [
+        [
+          {
+            "node": "Re-read Extracted",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Re-read Extracted": {
+      "main": [
+        [
+          {
+            "node": "Check 02",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Report": {
+      "main": [
+        [
+          {
+            "node": "Recipients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check 02": {
+      "main": [
+        [
+          {
+            "node": "02 Unchanged?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "02 Unchanged?": {
+      "main": [
+        [
+          {
+            "node": "Has New?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has New?": {
+      "main": [
+        [
+          {
+            "node": "Split New",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Note Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split New": {
+      "main": [
+        [
+          {
+            "node": "Append to New Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append to New Data": {
+      "main": [
+        [
+          {
+            "node": "Note Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Note Items": {
+      "main": [
+        [
+          {
+            "node": "Has Notes?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Notes?": {
+      "main": [
+        [
+          {
+            "node": "Write Notes",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Notes": {
+      "main": [
+        [
+          {
+            "node": "Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recipients": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
