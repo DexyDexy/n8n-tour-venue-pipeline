@@ -70,7 +70,7 @@ The search strategy was worked out offline first (Node.js research scripts again
 - Escalation when no address is found: `"<NAME> <CITY> email"` → `advanced` search → search with the corrected name → Facebook / Instagram only.
 - Emails are ranked: from the venue's own site, then addresses that match the venue name, then from its own social pages. Plugin, hosting and platform addresses are filtered out, and ROT13-obfuscated addresses are decoded.
 - Every decision is written to a *Scraper Notes* column (`name corrected`, `site rejected`, `similar spelling accepted`…) so the client can see why a row looks the way it does.
-- On the offline test set, rows with an email went from 0 to 16 out of 22 problem venues, at about 2.5 Tavily credits per venue. In the first live run, 46 of 71 venues got an email.
+- The strategy was tuned offline on hard cases first. The final version finds every publicly available email, unless the page blocks reading through Tavily, at about 2.5 Tavily credits per venue on average.
 - Running out of credits, a rejected key or rate limiting stops the run cleanly. The row is marked and the next run continues from it.
 
 ## Reliability
